@@ -1,0 +1,19 @@
+# Matrice des comptes de test fournis par le client
+auth:
+  # Le chemin relatif pour s'authentifier (à concaténer avec l'URL cible)
+  # Ex: /api/v1/login ou /auth/signin
+  login_path: "/v1/login" 
+  
+  # Le nom du champ attendu dans la réponse JSON contenant le jeton
+  token_response_key: "token"
+
+  accounts:
+    admin:
+      username: "admin_user"
+      password: "admin_password"
+    user_a:
+      username: "user_a"
+      password: "password_a"
+    user_b:
+      username: "user_b"
+      password: "password_b"
