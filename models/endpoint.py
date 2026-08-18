@@ -30,6 +30,7 @@ class UnifiedEndpoint:
     parameters: List[Parameter] = field(default_factory=list)
     graphql_payload_template: Optional[str] = None 
     is_administrative: bool = False 
+    body_template: Optional[dict] = None
     
     def get_id_parameters(self) -> List[Parameter]:
         """Retourne uniquement les paramètres qui ressemblent à des identifiants (pour le BOLA)"""

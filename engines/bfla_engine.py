@@ -47,11 +47,13 @@ class BflaEngine:
             )
             
             # 5. Interprétation du résultat
-            is_vulnerable = self._analyze_response(response)
-            
-            if is_vulnerable:
-                print(f"    [!!!] FAILLE BFLA CONFIRMÉE ! Un utilisateur standard a pu accéder à une fonction d'administration (Statut: {response.status_code})")
-            else:
+            verdict = self._analyze_response(response)
+
+            if verdict == "VULNERABLE":
+                print(f"    [!!!] FAILLE BFLA CONFIRMÉE ! Un utilisateur standard a réussi une action réservée (Statut: {response.status_code})")
+            elif verdict == "NON_CONCLUANT":
+                print(f"    [?] Test non concluant — requête invalide (Statut: {response.status_code})")
+            else:  # BLOQUE
                 print(f"    [-] Accès administratif correctement bloqué (Statut: {response.status_code})")
                 
             results.append({
@@ -60,26 +62,44 @@ class BflaEngine:
                 "api_type": endpoint.api_type.value,
                 "action_name": endpoint.action_name,
                 "status_code": response.status_code,
-                "is_vulnerable": is_vulnerable,
+                "verdict": verdict,
+                "is_vulnerable": (verdict == "VULNERABLE"),
                 "response_snippet": response.response_body[:150]
             })
             
         return results
 
-    def _analyze_response(self, response: AuditResponse) -> bool:
+    def _analyze_response(self, response: AuditResponse) -> str:
         """
-        Détermine si la restriction d'accès a échoué.
+        Oracle à trois états pour le BFLA. Renvoie :
+          - "VULNERABLE"     : un utilisateur standard a réussi une action réservée
+          - "BLOQUE"         : refus de privilège légitime (403, ou 404 de masquage)
+          - "NON_CONCLUANT"  : requête invalide, le test ne prouve rien
         """
-        if response.status_code == 0:
-            return False
+        code = response.status_code
 
+        # Échec technique
+        if code == 0:
+            return "NON_CONCLUANT"
+
+        # GraphQL : 200 avec "errors" = le résolveur a bloqué
         if response.is_graphql_error:
-            # GraphQL a bien bloqué l'accès au résolveur
-            return False
-            
-        # Si un utilisateur standard reçoit un 200/201/204 sur une route marquée 'Administrative'
-        # ou s'il parvient à interagir avec des données qui devraient lui être interdites.
-        if response.status_code in [200, 201, 204]:
-            return True
-            
-        return False
+            return "BLOQUE"
+
+        # Requête invalide → on n'a pas testé le privilège
+        #   400 = corps/paramètres malformés
+        #   401 = pas authentifié
+        if code in [400, 401]:
+            return "NON_CONCLUANT"
+
+        # Un utilisateur standard a réussi une action sensible → élévation de privilège
+        if code in [200, 201, 204]:
+            return "VULNERABLE"
+
+        # Refus explicite de privilège
+        #   403 = interdit (le vrai blocage BFLA)
+        #   404 = introuvable (masquage OU cible inexistante)
+        if code in [403, 404]:
+            return "BLOQUE"
+
+        return "NON_CONCLUANT"

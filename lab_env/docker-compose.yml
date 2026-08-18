@@ -1,7 +1,24 @@
-version: '3.8'
-
 services:
-  # Cible 1 : API REST Vulnérable (OpenAPI)
+
+  # ── Cible 1 : VAmPI (REST) — notre lab de développement ──────────
+  vampi:
+    image: erev0s/vampi:latest
+    ports:
+      - "5002:5000"          # port 5002 côté machine → 5000 dans le conteneur
+    container_name: lab_rest_vampi
+    environment:
+      - vulnerable=1          # 1 = mode vulnérable (celui qu'on veut)
+    
+  # VAmPI en mode sécurisé — port 5001
+  vampi-secure:
+    image: erev0s/vampi:latest
+    ports:
+      - "5001:5000"
+    container_name: lab_vampi_secure
+    environment:
+      - vulnerable=0
+
+  # ── Cible 2 : vAPI (REST) — lab de validation, plus tard ─────────
   vapi:
     image: roottusk/vapi:latest
     ports:
@@ -10,7 +27,7 @@ services:
     environment:
       - VAPI_BASE_URI=http://localhost:8081
 
-  # Cible 2 : API GraphQL Vulnérable
+  # ── Cible 3 : DVGA (GraphQL) — lab de validation, plus tard ──────
   dvga:
     image: dolevf/dvga:latest
     ports:
@@ -18,3 +35,4 @@ services:
     container_name: lab_graphql_dvga
     environment:
       - WEB_HOST=0.0.0.0
+      

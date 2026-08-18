@@ -81,6 +81,28 @@ class AuthManager:
             print(f"[ERREUR AUTH] Impossible de joindre l'endpoint de login ({login_url}): {e}")
             return None
 
+    def tester_login(self, username: str, password: str) -> bool:
+        
+        # On accède à la config exactement comme _login_and_get_token
+        auth_config = self.config.get('auth', {})
+        login_path = auth_config.get('login_path', '/login')
+        token_key = auth_config.get('token_response_key', 'token')
+        login_url = f"{self.target_url}{login_path}"
+
+        credentials = {"username": username, "password": password}
+
+        try:
+            response = requests.post(login_url, json=credentials, timeout=10)
+        except requests.RequestException:
+            return False
+
+        if response.status_code in [200, 201]:
+            data = response.json()
+            token = data.get(token_key)
+            return token is not None
+
+        return False
+    
     def get_auth_headers(self, role: str) -> Dict[str, str]:
         """Retourne les en-têtes HTTP et renouvelle automatiquement le jeton si nécessaire."""
         if role == 'unauth':

@@ -50,11 +50,15 @@ class RequestHandler:
                     query_params[param.name] = value
 
         try:
+             # Si l'endpoint déclare un corps de requête, on l'envoie en JSON
+            json_body = endpoint.body_template if endpoint.body_template else None
+
             res = requests.request(
                 method=endpoint.method,
                 url=final_url,
                 headers=headers,
                 params=query_params,
+                json=json_body,
                 timeout=self.timeout,
                 verify=False
             )

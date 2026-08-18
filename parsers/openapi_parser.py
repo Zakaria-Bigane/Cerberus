@@ -55,7 +55,9 @@ class OpenAPIParser:
                     
                     param_name = param.get('name', '')
                     param_in = param.get('in', '').upper()
-                    is_id = any(kw in param_name.lower() for kw in self.id_keywords)
+                    is_id_by_location = (param_in == 'PATH')
+                    is_id_by_name = any(kw in param_name.lower() for kw in self.id_keywords)
+                    is_id = is_id_by_location or is_id_by_name
                     
                     location = ParamLocation.QUERY
                     if param_in == 'PATH':
@@ -71,7 +73,28 @@ class OpenAPIParser:
                         is_potential_id=is_id
                     )
                     endpoint.parameters.append(parsed_param)
+                # Extraction du corps de requête (pour POST/PUT/PATCH)
+                request_body = operation.get('requestBody', {})
+                if request_body:
+                    content = request_body.get('content', {})
+                    json_content = content.get('application/json', {})
+                    body_schema = json_content.get('schema', {})
+                    properties = body_schema.get('properties', {})
 
+                    # On construit un body d'exemple à partir des propriétés déclarées
+                    body_template = {}
+                    for prop_name, prop_details in properties.items():
+                        # On utilise l'exemple du schéma s'il existe, sinon une valeur par défaut selon le type
+                        if 'example' in prop_details:
+                            body_template[prop_name] = prop_details['example']
+                        elif prop_details.get('type') == 'string':
+                            body_template[prop_name] = 'test_string'
+                        elif prop_details.get('type') in ['integer', 'number']:
+                            body_template[prop_name] = 1
+                        else:
+                            body_template[prop_name] = 'test_value'
+
+                    endpoint.body_template = body_template
                 endpoints.append(endpoint)
 
         return endpoints
