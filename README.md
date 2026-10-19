@@ -47,7 +47,7 @@ de l'opération plutôt que le seul code de statut renvoyé.
 Prérequis : **Python 3.9+**.
 
 ```bash
-git clone https://github.com/VOTRE-PSEUDO/cerberus.git
+git clone https://github.com/Zakaria-Bigane/cerberus.git
 cd cerberus
 python -m venv venv
 source venv/bin/activate        # Windows : venv\Scripts\activate
