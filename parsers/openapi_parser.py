@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import List
 from models.endpoint import UnifiedEndpoint, ApiType, Parameter, ParamLocation
+from core.cerberus_display import log_success, log_error, log_warning
 
 class OpenAPIParser:
     # file_path peut être une chaîne de caractères ou un objet Path
@@ -10,13 +11,14 @@ class OpenAPIParser:
         self.file_path = Path(file_path)
         self.id_keywords = ['id', 'uuid', 'uid', 'reference', 'token']
         self.admin_keywords = ['admin', 'manage', 'delete', 'update', 'config']
+        self.register_path = None 
 
     def parse(self) -> List[UnifiedEndpoint]:
         endpoints = []
         
         # Vérification robuste de l'existence du fichier
         if not self.file_path.exists():
-            print(f"[ERREUR] Le fichier est introuvable : {self.file_path.resolve()}")
+            log_error(f"Le fichier est introuvable : {self.file_path.resolve()}")
             return endpoints
 
         try:
@@ -24,7 +26,7 @@ class OpenAPIParser:
             with self.file_path.open('r', encoding='utf-8', newline='') as f:
                 spec = json.load(f)
         except Exception as e:
-            print(f"[ERREUR] Impossible de lire le fichier {self.file_path.name}: {e}")
+            log_error(f"Impossible de lire le fichier {self.file_path.name}: {e}")
             return endpoints
 
         paths = spec.get('paths', {})
@@ -97,7 +99,41 @@ class OpenAPIParser:
                     endpoint.body_template = body_template
                 endpoints.append(endpoint)
 
+        # Déduction de l'infrastructure : l'endpoint de register
+        self.register_path = self._detecter_register(paths)
+        if self.register_path:
+            log_success(f"Endpoint de register déduit : {self.register_path}")
+        else:
+            log_warning("Aucun endpoint de register détecté dans le schéma.")
+
         return endpoints
+
+
+    def _detecter_register(self, paths):
+
+        MOTS_USERNAME = ["username", "email", "login", "user"]
+        MOTS_PASSWORD = ["password", "passwd", "pwd", "pass"]
+        MOTS_CHEMIN_AUTH = ["login", "signin", "authenticate", "session"]
+
+        for chemin, operations in paths.items():
+            for methode, operation in operations.items():
+                if methode.lower() != "post":
+                    continue
+
+                body = operation.get("requestBody", {})
+                contenu = body.get("content", {}).get("application/json", {})
+                props = contenu.get("schema", {}).get("properties", {})
+                champs = [c.lower() for c in props.keys()]
+
+                a_user = any(any(m in c for m in MOTS_USERNAME) for c in champs)
+                a_pass = any(any(m in c for m in MOTS_PASSWORD) for c in champs)
+
+                if a_user and a_pass:
+                    est_login = any(m in chemin.lower() for m in MOTS_CHEMIN_AUTH)
+                    if not est_login:
+                        return chemin
+
+        return None
 
 # --- Test d'exécution autonome sans Hardcoding ---
 if __name__ == "__main__":

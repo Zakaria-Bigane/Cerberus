@@ -3,110 +3,143 @@ import sys
 import os
 from typing import List
 from models.endpoint import UnifiedEndpoint, ApiType, Parameter, ParamLocation
+from core.cerberus_display import log_error
+
 
 class GraphQLParser:
     def __init__(self, url: str):
         self.url = url
         self.id_keywords = ['id', 'uuid', 'uid', 'reference']
-        self.admin_keywords = ['admin', 'manage', 'delete', 'update', 'create']
 
+    # ─────────────────────────────────────────────────────────────────
     def fetch_schema(self) -> dict:
+        """Introspection complète : opérations + types (pour résoudre les champs)."""
         introspection_query = """
-        query {
+        {
           __schema {
-            queryType { name }
-            mutationType { name }
+            queryType {
+              fields {
+                name
+                type { name kind ofType { name kind ofType { name kind } } }
+                args { name type { name kind ofType { name kind } } }
+              }
+            }
+            mutationType {
+              fields {
+                name
+                type { name kind ofType { name kind ofType { name kind } } }
+                args { name type { name kind ofType { name kind } } }
+              }
+            }
             types {
               name
               fields {
                 name
-                args {
-                  name
-                  type { name kind }
-                }
+                type { name kind ofType { name kind ofType { name kind } } }
               }
             }
           }
         }
         """
         try:
-            response = requests.post(self.url, json={"query": introspection_query}, timeout=5)
+            response = requests.post(self.url, json={"query": introspection_query}, timeout=10)
             if response.status_code == 200:
                 return response.json()
-            else:
-                print(f"[ERREUR] Échec de l'introspection. Statut: {response.status_code}")
-                return {}
+            log_error(f"Échec de l'introspection. Statut: {response.status_code}")
+            return {}
         except Exception as e:
-            print(f"[ERREUR] Connexion impossible à {self.url}: {e}")
+            log_error(f"Connexion impossible à {self.url}: {e}")
             return {}
 
+    # ─────────────────────────────────────────────────────────────────
+    def _est_scalaire(self, champ_type) -> bool:
+        """Descend dans les couches NON_NULL/LIST pour trouver le kind réel."""
+        while champ_type:
+            kind = champ_type.get("kind")
+            if kind in ("SCALAR", "ENUM"):
+                return True
+            if kind in ("OBJECT", "INTERFACE", "UNION"):
+                return False
+            champ_type = champ_type.get("ofType")
+        return False
+
+    def _resoudre_nom_type(self, type_info) -> str:
+        """Descend dans ofType pour trouver le nom du type réel."""
+        while type_info:
+            if type_info.get("name"):
+                return type_info["name"]
+            type_info = type_info.get("ofType")
+        return None
+
+    # ─────────────────────────────────────────────────────────────────
     def parse(self) -> List[UnifiedEndpoint]:
         endpoints = []
         schema_data = self.fetch_schema()
-        
-        if not schema_data or 'data' not in schema_data:
+
+        if not schema_data or 'data' not in schema_data or not schema_data['data']:
+            log_error("Introspection vide ou invalide.")
             return endpoints
-            
+
         schema = schema_data['data']['__schema']
-        query_type_name = schema['queryType']['name'] if schema.get('queryType') else 'Query'
-        mutation_type_name = schema['mutationType']['name'] if schema.get('mutationType') else 'Mutation'
-        
-        for gql_type in schema.get('types', []):
-            if gql_type['name'] not in [query_type_name, mutation_type_name]:
+
+        # 1. Construire le dictionnaire : nom_type -> champs scalaires
+        champs_par_type = {}
+        for t in schema.get('types', []):
+            if not t.get('fields'):
                 continue
-                
-            is_mutation = (gql_type['name'] == mutation_type_name)
-            fields = gql_type.get('fields') or []
-            
-            for field in fields:
+            scalaires = [c['name'] for c in t['fields'] if self._est_scalaire(c['type'])]
+            champs_par_type[t['name']] = scalaires
+
+        # 2. Traiter les queries (lectures) et mutations (écritures)
+        for type_ops, is_mutation in [('queryType', False), ('mutationType', True)]:
+            bloc = schema.get(type_ops)
+            if not bloc or not bloc.get('fields'):
+                continue
+
+            for field in bloc['fields']:
                 action_name = field['name']
-                is_admin = is_mutation or any(kw in action_name.lower() for kw in self.admin_keywords)
-                
+
+                # Type de retour et ses champs scalaires
+                type_retour = self._resoudre_nom_type(field.get('type', {}))
+                return_fields = champs_par_type.get(type_retour, [])
+
                 endpoint = UnifiedEndpoint(
                     api_type=ApiType.GRAPHQL,
-                    path=self.url, 
+                    path=self.url,
                     method="POST",
                     action_name=action_name,
-                    is_administrative=is_admin
+                    is_administrative=False,   # le BFLA différentiel n'en dépend plus
+                    is_mutation=is_mutation,
+                    return_fields=return_fields
                 )
-                
-                args = field.get('args', [])
-                for arg in args:
+
+                # Les arguments (dont les identifiants)
+                for arg in field.get('args', []):
                     arg_name = arg['name']
                     is_id = any(kw in arg_name.lower() for kw in self.id_keywords)
-                    
                     param = Parameter(
                         name=arg_name,
                         location=ParamLocation.GQL_ARG,
-                        data_type=arg.get('type', {}).get('name', 'unknown'),
-                        is_required=arg.get('type', {}).get('kind') == 'NON_NULL',
+                        data_type=self._resoudre_nom_type(arg.get('type', {})) or 'unknown',
+                        is_required=(arg.get('type', {}).get('kind') == 'NON_NULL'),
                         is_potential_id=is_id
                     )
                     endpoint.parameters.append(param)
-                    
+
                 endpoints.append(endpoint)
-                
+
         return endpoints
 
-# --- Test d'exécution autonome sans Hardcoding ---
+
+# --- Test autonome ---
 if __name__ == "__main__":
-    # Récupération dynamique de l'URL (Argument CLI ou Variable d'Environnement)
-    target_url = None
-    
-    if len(sys.argv) > 1:
-        target_url = sys.argv[1]
-    else:
-        target_url = os.getenv("GRAPHQL_TARGET_URL")
-        
+    target_url = sys.argv[1] if len(sys.argv) > 1 else os.getenv("GRAPHQL_TARGET_URL")
     if not target_url:
-        print("[ERREUR] Aucune URL cible fournie.")
-        print("Usage: python -m parsers.graphql_parser <URL_CIBLE>")
-        print("Exemple: python -m parsers.graphql_parser http://localhost:5013/graphql")
+        print("Usage: python -m parsers.graphql_parser <URL>")
         sys.exit(1)
 
-    print(f"[*] Test du parseur GraphQL sur la cible : {target_url}")
     parser = GraphQLParser(target_url)
-    results = parser.parse()
-    
-    for ep in results:
-        print(ep)
+    for ep in parser.parse():
+        type_op = "MUTATION" if ep.is_mutation else "QUERY"
+        ids = [p.name for p in ep.get_id_parameters()]
+        print(f"[{type_op:8}] {ep.action_name:20} | ids: {ids} | champs: {ep.return_fields[:4]}...")

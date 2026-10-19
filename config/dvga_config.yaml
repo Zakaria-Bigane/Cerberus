@@ -1,0 +1,18 @@
+auth:
+  # Type d'authentification : "rest" ou "graphql"
+  type: "graphql"
+
+  # Pour GraphQL : le nom de la mutation de login et le champ du token
+  login_mutation: "login"
+  token_field: "accessToken"
+
+  accounts:
+    admin:
+      username: "admin"
+      password: "changeme"
+    user_a:
+      username: "attaquant"
+      password: "test123"
+    user_b:
+      username: "attaquant"
+      password: "test123"

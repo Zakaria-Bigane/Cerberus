@@ -23,16 +23,17 @@ class RequestHandler:
     def send(self, base_url: str, endpoint: UnifiedEndpoint, headers: Dict[str, str], params_map: Dict[str, Any]) -> AuditResponse:
         """
         Forge et envoie la requête HTTP en fonction du type d'API.
-        params_map est un dictionnaire contenant les valeurs à injecter, ex: {"user_id": 124}
         """
-        # Nettoyage de l'URL pour éviter les doubles slashes (ex: http://site.com//api/v1)
-        url = f"{base_url.rstrip('/')}/{endpoint.path.lstrip('/')}"
-        
         if endpoint.api_type == ApiType.REST:
+            # REST : le path est relatif, on le concatène à base_url
+            url = f"{base_url.rstrip('/')}/{endpoint.path.lstrip('/')}"
             return self._send_rest(url, endpoint, headers, params_map)
+
         elif endpoint.api_type == ApiType.GRAPHQL:
+            # GraphQL : le path EST déjà l'URL complète de l'endpoint /graphql
+            url = endpoint.path
             return self._send_graphql(url, endpoint, headers, params_map)
-        
+
         return AuditResponse(0, "Type d'API inconnu", 0, 0.0)
 
     def _send_rest(self, url: str, endpoint: UnifiedEndpoint, headers: Dict[str, str], params_map: Dict[str, Any]) -> AuditResponse:
@@ -66,28 +67,41 @@ class RequestHandler:
         except requests.RequestException as e:
             return AuditResponse(0, str(e), 0, 0.0)
 
-    def _send_graphql(self, url: str, endpoint: UnifiedEndpoint, headers: Dict[str, str], params_map: Dict[str, Any]) -> AuditResponse:
-        """Logique d'assemblage spécifique à GraphQL."""
-        # Construction basique des arguments de la requête GraphQL (ex: id: 123)
+    def _send_graphql(self, url, endpoint, headers, params_map):
+        """Construit et envoie une requête GraphQL en demandant les vrais champs."""
+         
+        # 1. Construire les arguments (ex: id: 1, title: "x")
         args_list = []
         for p in endpoint.parameters:
             if p.name in params_map:
                 val = params_map[p.name]
-                # Si c'est une chaîne, il faut l'entourer de guillemets pour GraphQL
-                if isinstance(val, str):
-                    args_list.append(f'{p.name}: "{val}"')
-                else:
+                # On respecte le type GraphQL déclaré par le schéma
+                type_arg = (p.data_type or "").lower()
+                if type_arg in ("int", "integer", "float", "id", "boolean"):
+                    # Types numériques/ID : pas de guillemets.
+                    # (En GraphQL, le type ID accepte un entier ou une chaîne nue)
                     args_list.append(f'{p.name}: {val}')
-        
+                else:
+                    # Types chaîne : avec guillemets
+                    args_list.append(f'{p.name}: "{val}"')
         args_str = f"({', '.join(args_list)})" if args_list else ""
-        
-        # Le mot-clé dépend de l'action. On simplifie pour le MVP :
-        # Si le nom contient des mots d'action, on tente une mutation, sinon une query.
-        is_mutation = any(kw in endpoint.action_name.lower() for kw in ['delete', 'update', 'create', 'add', 'remove'])
-        operation_type = "mutation" if is_mutation else "query"
-        
-        # On demande __typename pour avoir une réponse valide minimum sans connaître la structure de retour
-        gql_body = f"{operation_type} {{ {endpoint.action_name}{args_str} {{ __typename }} }}"
+
+        # 2. Choisir query ou mutation depuis l'info du parser (pas de devinette)
+        operation_type = "mutation" if endpoint.is_mutation else "query"
+
+        # 3. Construire les champs de retour à demander
+        if endpoint.return_fields:
+            champs = " ".join(endpoint.return_fields)
+            selection = f" {{ {champs} }}"
+        elif endpoint.is_mutation:
+            # Mutation à retour objet sans champs scalaires (ex: editPaste → {paste})
+            # On demande __typename pour que la requête soit valide.
+            # Le verdict viendra de l'oracle d'effet (relecture), pas de ce retour.
+            selection = " { __typename }"
+        else:
+            selection = ""
+
+        gql_body = f"{operation_type} {{ {endpoint.action_name}{args_str}{selection} }}"
         
         try:
             res = requests.post(
@@ -97,13 +111,11 @@ class RequestHandler:
                 timeout=self.timeout,
                 verify=False
             )
-            
-            # GraphQL renvoie souvent 200 OK, mais avec un tableau "errors" dans le JSON si l'autorisation échoue
+            # GraphQL : 200 même en cas d'erreur ; l'erreur est dans le champ "errors"
             is_gql_error = False
-            if res.status_code == 200 and "errors" in res.text.lower():
+            if res.status_code == 200 and '"errors"' in res.text:
                 is_gql_error = True
-                
-            return AuditResponse(res.status_code, res.text, len(res.text), res.elapsed.total_seconds(), is_gql_error)
-            
+            return AuditResponse(res.status_code, res.text, len(res.text),
+                                 res.elapsed.total_seconds(), is_gql_error)
         except requests.RequestException as e:
             return AuditResponse(0, str(e), 0, 0.0)

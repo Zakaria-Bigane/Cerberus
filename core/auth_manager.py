@@ -5,6 +5,7 @@ import json
 import time
 from pathlib import Path
 from typing import Dict, Optional
+from core.cerberus_display import log_info, log_error, log_warning
 
 class AuthManager:
     def __init__(self, target_url: str, config_path: str = "config/audit_config.yaml"):
@@ -13,17 +14,17 @@ class AuthManager:
         self.config = self._load_config()
         self._active_tokens = {}
         # Marge de sécurité en secondes (renouvelle le token s'il expire dans moins d'une minute)
-        self.expiration_buffer = 60 
+        self.expiration_buffer = 10 
 
     def _load_config(self) -> dict:
         if not self.config_path.exists():
-            print(f"[ERREUR] Fichier de configuration introuvable : {self.config_path.resolve()}")
+            log_error(f"Fichier de configuration introuvable : {self.config_path.resolve()}")
             return {}
         try:
             with self.config_path.open('r', encoding='utf-8') as f:
                 return yaml.safe_load(f) or {}
         except Exception as e:
-            print(f"[ERREUR] Impossible de lire {self.config_path.name}: {e}")
+            log_error(f"Impossible de lire {self.config_path.name}: {e}")
             return {}
 
     def _is_token_expired(self, token: str) -> bool:
@@ -52,12 +53,11 @@ class AuthManager:
                 return (exp_time - current_time) < self.expiration_buffer
                 
             return False # S'il n'y a pas de champ 'exp', on suppose qu'il n'expire pas
-        except Exception as e:
-            # En cas d'erreur de parsing, on log en debug et on force le renouvellement par sécurité
-            print(f"[DEBUG] Erreur lors de la lecture de l'expiration du token : {e}")
+        except Exception:
+            # En cas d'erreur de parsing, on force le renouvellement par sécurité
             return True
 
-    def _login_and_get_token(self, role: str) -> Optional[str]:
+    def _login_rest(self, role: str) -> Optional[str]:
         auth_config = self.config.get('auth', {})
         accounts = auth_config.get('accounts', {})
         
@@ -75,11 +75,63 @@ class AuthManager:
                 data = response.json()
                 return data.get(token_key)
             else:
-                print(f"[ERREUR AUTH] Échec connexion pour '{role}'. Statut: {response.status_code}")
+                log_error(f"[AUTH] Échec connexion pour '{role}'. Statut: {response.status_code}")
                 return None
         except requests.RequestException as e:
-            print(f"[ERREUR AUTH] Impossible de joindre l'endpoint de login ({login_url}): {e}")
+            log_error(f"[AUTH] Impossible de joindre l'endpoint de login ({login_url}): {e}")
             return None
+
+    def _login_graphql(self, role: str) -> Optional[str]:
+        """
+        Login via mutation GraphQL.
+        Envoie login(username, password) { accessToken } et extrait le token
+        de data.<mutation>.<token_field>.
+        """
+        auth_config = self.config.get('auth', {})
+        accounts = auth_config.get('accounts', {})
+        if role not in accounts:
+            return None
+
+        creds = accounts[role]
+        login_mutation = auth_config.get('login_mutation', 'login')
+        token_field = auth_config.get('token_field', 'accessToken')
+
+        username = creds['username']
+        password = creds['password']
+        query = (
+            f'mutation {{ {login_mutation}'
+            f'(username: "{username}", password: "{password}") '
+            f'{{ {token_field} }} }}'
+        )
+
+        try:
+            response = requests.post(
+                self.target_url, json={"query": query}, timeout=10
+            )
+            if response.status_code != 200:
+                log_error(f"[AUTH GQL] Statut {response.status_code} pour '{role}'")
+                return None
+
+            data = response.json()
+            if data.get("errors"):
+                msg = data["errors"][0].get("message", "erreur inconnue")
+                log_error(f"[AUTH GQL] {msg} pour '{role}'")
+                return None
+
+            token = data.get("data", {}).get(login_mutation, {}).get(token_field)
+            return token
+        except requests.RequestException as e:
+            log_error(f"[AUTH GQL] Connexion impossible : {e}")
+            return None
+
+    def _login_and_get_token(self, role: str) -> Optional[str]:
+        """
+        Aiguille vers le login REST ou GraphQL selon la config.
+        """
+        type_auth = self.config.get('auth', {}).get('type', 'rest')
+        if type_auth == 'graphql':
+            return self._login_graphql(role)
+        return self._login_rest(role)
 
     def tester_login(self, username: str, password: str) -> bool:
         
@@ -115,7 +167,7 @@ class AuthManager:
         if not token:
             needs_refresh = True
         elif self._is_token_expired(token):
-            print(f"[*] Le jeton pour le rôle '{role}' est sur le point d'expirer. Renouvellement automatique...")
+            log_info(f"Le jeton pour le rôle '{role}' est sur le point d'expirer. Renouvellement automatique...")
             needs_refresh = True
 
         # 2. Exécution du renouvellement si flaggué
@@ -124,7 +176,7 @@ class AuthManager:
             if new_token:
                 self._active_tokens[role] = new_token
             else:
-                print(f"[ATTENTION] Impossible de générer le jeton pour le rôle '{role}'")
+                log_warning(f"Impossible de générer le jeton pour le rôle '{role}'")
                 return {"Content-Type": "application/json"}
         
         # 3. Retour des en-têtes valides
