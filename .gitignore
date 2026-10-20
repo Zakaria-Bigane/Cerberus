@@ -15,4 +15,5 @@ Thumbs.db
 .vscode/
 
 # Fichiers temporaires générés lors des tests
-test_swagger_temp.json
+vampi_opneapi.json
+crapi_openapi.json
