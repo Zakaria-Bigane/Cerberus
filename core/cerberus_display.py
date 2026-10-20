@@ -7,7 +7,8 @@ normalisés (à la manière des outils de sécurité comme nmap, sqlmap, nikto).
 # --- Couleurs ANSI ---------------------------------------------------
 # colorama rend les couleurs ANSI fonctionnelles sous Windows.
 try:
-    from colorama import init as _cinit, Fore, Style
+    from colorama import Fore, Style
+    from colorama import init as _cinit
     _cinit()  # active la traduction ANSI -> API Windows
     _VERT   = Fore.GREEN
     _ROUGE  = Fore.RED

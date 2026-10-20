@@ -1,11 +1,14 @@
-import yaml
-import requests
 import base64
 import json
 import time
 from pathlib import Path
 from typing import Dict, Optional
-from core.cerberus_display import log_info, log_error, log_warning
+
+import requests
+import yaml
+
+from core.cerberus_display import log_error, log_info, log_warning
+
 
 class AuthManager:
     def __init__(self, target_url: str, config_path: str = "config/audit_config.yaml"):

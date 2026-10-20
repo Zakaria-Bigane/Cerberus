@@ -4,6 +4,7 @@ Transforme les résultats bruts des moteurs en un rapport structuré et exploita
 """
 import json
 from datetime import datetime
+
 from core.cerberus_display import log_success
 
 

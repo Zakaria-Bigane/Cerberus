@@ -1,19 +1,12 @@
-# Environnements virtuels
-venv/
-env/
-
-# Fichiers de cache Python
+.coverage
+coverage.xml
+htmlcov/
 __pycache__/
 *.pyc
-*.pyo
-
-# Fichiers MacOS/Windows
-.DS_Store
-Thumbs.db
-
-# Configuration locale VS Code
-.vscode/
-
-# Fichiers temporaires générés lors des tests
-vampi_opneapi.json
-crapi_openapi.json
+.venv/
+.venv-ci/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/

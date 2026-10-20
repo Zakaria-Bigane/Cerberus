@@ -1,9 +1,11 @@
-import requests
-import sys
 import os
+import sys
 from typing import List
-from models.endpoint import UnifiedEndpoint, ApiType, Parameter, ParamLocation
+
+import requests
+
 from core.cerberus_display import log_error
+from models.endpoint import ApiType, Parameter, ParamLocation, UnifiedEndpoint
 
 
 class GraphQLParser:

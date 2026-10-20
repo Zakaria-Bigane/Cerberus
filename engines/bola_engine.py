@@ -1,11 +1,17 @@
-from typing import List, Dict, Any
-from models.endpoint import UnifiedEndpoint
+from typing import Any, Dict, List
+
 from core.auth_manager import AuthManager
-from core.request_handler import RequestHandler, AuditResponse
-from models.endpoint import UnifiedEndpoint, ApiType
 from core.cerberus_display import (
-    log_info, log_error, log_faille, log_public, log_unknown, separateur
+    log_error,
+    log_faille,
+    log_info,
+    log_public,
+    log_unknown,
+    separateur,
 )
+from core.request_handler import AuditResponse, RequestHandler
+from models.endpoint import ApiType, UnifiedEndpoint
+
 
 class BolaEngine:
     def __init__(self, auth_manager: AuthManager, request_handler: RequestHandler):
@@ -482,7 +488,6 @@ class BolaEngine:
         Récupère l'id de l'attaquant via la query 'me'.
         Mis en cache pour ne le demander qu'une fois.
         """
-        import json
 
         # Cache : on ne demande qu'une fois
         if hasattr(self, '_id_attaquant_cache'):
