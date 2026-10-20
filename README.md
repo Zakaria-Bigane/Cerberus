@@ -59,7 +59,7 @@ pip install -r requirements.txt
 ### API REST (OpenAPI)
 
 ```bash
-python main.py \
+python Cerberus.py \
   --target http://localhost:5002 \
   --type rest \
   --schema vampi_openapi.json \
@@ -70,7 +70,7 @@ python main.py \
 ### API GraphQL
 
 ```bash
-python main.py \
+python Cerberus.py \
   --target http://localhost:5013/graphql \
   --type graphql \
   --victim-id 1 \
@@ -113,7 +113,7 @@ auth:
 
 ```
 cerberus/
-├── main.py                 # point d'entrée (CLI)
+├── Cerberus.py                 # point d'entrée (CLI)
 ├── config/                 # configurations YAML par cible
 ├── core/                   # auth, requêtes HTTP, affichage
 ├── parsers/                # analyseurs OpenAPI et GraphQL
