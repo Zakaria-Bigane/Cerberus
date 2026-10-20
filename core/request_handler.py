@@ -1,8 +1,10 @@
+from dataclasses import dataclass
+from typing import Any, Dict
+
 import requests
 import urllib3
-from typing import Dict, Any
-from dataclasses import dataclass
-from models.endpoint import UnifiedEndpoint, ApiType, ParamLocation
+
+from models.endpoint import ApiType, ParamLocation, UnifiedEndpoint
 
 # Désactive les avertissements SSL (très courant lors des audits en laboratoire de pentest)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

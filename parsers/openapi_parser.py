@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 from typing import List
-from models.endpoint import UnifiedEndpoint, ApiType, Parameter, ParamLocation
-from core.cerberus_display import log_success, log_error, log_warning
+
+from core.cerberus_display import log_error, log_success, log_warning
+from models.endpoint import ApiType, Parameter, ParamLocation, UnifiedEndpoint
+
 
 class OpenAPIParser:
     # file_path peut être une chaîne de caractères ou un objet Path

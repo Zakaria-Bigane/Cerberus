@@ -1,0 +1,13 @@
+# Configuration Ruff — linting minimal et défendable pour un outil de sécurité.
+# On retient les vraies erreurs (F) + style basique (E4/E7/E9) + imports triés (I).
+# Les règles stylistiques agressives (UP, BLE, SIM…) sont volontairement exclues :
+# elles généreraient du bruit sur un code fonctionnel sans valeur ajoutée.
+
+exclude = ["lab_env", ".venv", "__pycache__"]
+
+[lint]
+select = ["F", "E4", "E7", "E9", "I"]
+ignore = []
+
+[lint.per-file-ignores]
+"reporters/__init__.py" = ["F401"]

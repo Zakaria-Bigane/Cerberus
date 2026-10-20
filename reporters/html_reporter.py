@@ -4,6 +4,7 @@ Produit un document autonome (CSS inclus) présentable à un client.
 """
 import html
 from datetime import datetime
+
 from core.cerberus_display import log_success
 
 

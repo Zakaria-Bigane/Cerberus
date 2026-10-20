@@ -1,17 +1,23 @@
 import argparse
 import sys
+
 from core.auth_manager import AuthManager
-from core.request_handler import RequestHandler
-from parsers.openapi_parser import OpenAPIParser
-from parsers.graphql_parser import GraphQLParser
-from engines.bola_engine import BolaEngine
-from engines.bfla_engine import BflaEngine
-from reporters.json_reporter import JsonReporter
-from reporters.html_reporter import HtmlReporter
 from core.cerberus_display import (
-    afficher_banniere, afficher_entete, separateur,
-    log_info, log_success, log_error, log_faille
+    afficher_banniere,
+    afficher_entete,
+    log_error,
+    log_faille,
+    log_info,
+    log_success,
+    separateur,
 )
+from core.request_handler import RequestHandler
+from engines.bfla_engine import BflaEngine
+from engines.bola_engine import BolaEngine
+from parsers.graphql_parser import GraphQLParser
+from parsers.openapi_parser import OpenAPIParser
+from reporters.html_reporter import HtmlReporter
+from reporters.json_reporter import JsonReporter
 
 
 def setup_cli():
