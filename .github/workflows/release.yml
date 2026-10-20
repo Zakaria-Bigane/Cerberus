@@ -1,0 +1,134 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CD Cerberus — publication automatique sur PyPI à chaque tag sémantique.
+# Modèle "GitHub as release manager" : on pousse un tag vX.Y.Z, le pipeline
+# construit, vérifie et publie le paquet. test.pypi.org d'abord (job testpypi),
+# puis PyPI réel seulement si l'environnement protégé `pypi-publish` approuve.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"   # ex : v1.0.0 — déclencheur unique des livraisons
+
+permissions: {}   # refus par défaut ; chaque job n'élève que ce qu'il faut
+
+jobs:
+  # ── 1. Build + tests sur la version qui sera publiée ───────────────────────
+  build-and-test:
+    name: Build & Tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (action épinglée par commit SHA)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Installer Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Vérifier la cohérence du tag avec pyproject.toml
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::Le tag v$TAG ne correspond pas à la version $VERSION de pyproject.toml."
+            exit 1
+          fi
+          echo "Version cohérente : $VERSION"
+
+      - name: Installer les dépendances de dev et lancer les tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pytest tests/
+
+      - name: Linter (Ruff) avant publication
+        run: ruff check .
+
+      - name: Construire le paquet (sdist + wheel)
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Publier les artefacts comme pièce jointe de la release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist
+          path: dist/
+
+  # ── 2. Publication d'essai sur TestPyPI (validation bout-en-bout) ──────────
+  testpypi:
+    name: Publication d'essai (TestPyPI)
+    needs: build-and-test
+    runs-on: ubuntu-24.04
+    environment: testpypi
+    permissions:
+      contents: read
+    steps:
+      - name: Récupérer les artefacts construits
+        uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e  # v4.1.7
+        continue-on-error: true
+        with:
+          name: dist
+          path: dist/
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Publier sur TestPyPI (jeton via secrets, jamais en clair)
+        uses: pypa/gh-action-pypi-publish@f7600683efdcb7656dec5b29656edb7bc586e597  # v1.10.3
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          skip-existing: true
+
+  # ── 3. Publication réelle sur PyPI — gated by Environment protection ──────
+  # Ce job est bloqué tant que l'environnement GitHub `pypi-publish`
+  # (Settings → Environments → required reviewers) n'approuve pas manuellement.
+  publish:
+    name: Publication PyPI (après approbation)
+    needs: [build-and-test, testpypi]
+    runs-on: ubuntu-24.04
+    environment: pypi-publish
+    permissions:
+      contents: read
+    steps:
+      - name: Récupérer les artefacts construits
+        uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e  # v4.1.7
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publier sur PyPI
+        uses: pypa/gh-action-pypi-publish@f7600683efdcb7656dec5b29656edb7bc586e597  # v1.10.3
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+  # ── 4. Changelog automatique sur la GitHub Release ─────────────────────────
+  github-release:
+    name: Créer la GitHub Release
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write    # nécessaire pour créer une release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Créer la release avec notes automatiques
+        uses: softprops/action-gh-release@6da8fa9354ddfdc4aeace5fc48d7f679b5214090  # v2.4.1
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*

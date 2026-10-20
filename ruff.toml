@@ -4,7 +4,7 @@
 # Les règles stylistiques agressives (UP, SIM…) restent exclues : du bruit sans
 # valeur ajoutée sur un code fonctionnel.
 
-exclude = ["lab_env", ".venv", "__pycache__"]
+exclude = ["lab_env", ".venv", ".venv-*", "venv*", "__pycache__", "dist", "build"]
 
 [lint]
 select = ["F", "E4", "E7", "E9", "I", "S"]

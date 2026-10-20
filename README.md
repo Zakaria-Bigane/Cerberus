@@ -28,6 +28,17 @@ Chaque push et pull request déclenche le workflow GitHub Actions suivant :
 Sécurité du pipeline : jeton en lecture seule par défaut, actions tierces
 épinglées par commit SHA, aucun secret en clair.
 
+## Livraison continue (CD)
+
+Le déploiement est piloté par les tags Git (modèle « GitHub as release manager ») :
+
+1. Je bump la version dans `pyproject.toml`, je commit, puis je pousse un tag `vX.Y.Z`.
+2. Le workflow `release.yml` se déclenche : vérification de cohérence tag ↔ version, tests + lint, build du sdist/wheel, `twine check`.
+3. Publication d'essai sur **TestPyPI**, puis publication réelle sur **PyPI** uniquement après approbation manuelle de l'environnement protégé `pypi-publish` (gate humain volontaire).
+4. Création automatique de la **GitHub Release** avec changelog et paquets en pièces jointes.
+
+Les secrets d'index (`PYPI_API_TOKEN`, `TEST_PYPI_API_TOKEN`) vivent dans les environments GitHub, jamais dans le dépôt.
+
 ## Pourquoi Cerberus ?
 
 Le schéma d'une API (OpenAPI, introspection GraphQL) déclare les besoins
@@ -61,14 +72,24 @@ de l'opération plutôt que le seul code de statut renvoyé.
 
 ## Installation
 
-Prérequis : **Python 3.10+** (version testée en CI : 3.10, 3.11, 3.12).
+Prérequis : **Python 3.10+** (versions testées en CI : 3.10, 3.11, 3.12).
+
+**Via pip (recommandé)** — une fois le paquet publié sur PyPI :
 
 ```bash
-git clone https://github.com/Zakaria-Bigane/cerberus.git
-cd cerberus
+pip install cerberus-scanner
+cerberus --help
+```
+
+**Depuis la source :**
+
+```bash
+git clone https://github.com/Zakaria-Bigane/Cerberus.git
+cd Cerberus
 python -m venv venv
 source venv/bin/activate        # Windows : venv\Scripts\activate
 pip install -r requirements.txt
+python Cerberus.py --help
 ```
 
 ## Utilisation

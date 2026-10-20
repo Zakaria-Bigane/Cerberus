@@ -4,9 +4,15 @@ htmlcov/
 __pycache__/
 *.pyc
 .venv/
+.venv-*/
 .venv-ci/
 venv/
 env/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+
+# Artefacts de build/publish (CD)
+dist/
+build/
+*.egg-info/

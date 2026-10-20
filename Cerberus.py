@@ -41,7 +41,9 @@ def setup_cli():
 
     return parser.parse_args()
 
-if __name__ == "__main__":
+
+def main():
+    """Point d'entrée de Cerberus (utilisé par `python Cerberus.py` et le script console `cerberus`)."""
     args = setup_cli()
 
     # Vérification de cohérence des arguments
@@ -107,3 +109,6 @@ if __name__ == "__main__":
     # 5. Génération des rapports
     JsonReporter().generer(all_results, cible=args.target, api_type=args.type.upper())
     HtmlReporter().generer(all_results, cible=args.target, api_type=args.type.upper())
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cerberus-scanner"
+version = "1.0.0"
+description = "Scanner d'API REST/GraphQL pour failles BOLA et BFLA (OWASP API1/BFLA) — outil éducatif pour laboratoires sécurisés."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Zakaria Bigane" }]
+keywords = ["security", "api-testing", "bola", "bfla", "graphql", "openapi", "owasp"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Topic :: Security",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "requests>=2.34",
+  "urllib3>=2.8",
+  "PyYAML>=6.0",
+  "colorama>=0.4.6",
+]
+
+[project.scripts]
+cerberus = "Cerberus:main"
+
+[tool.setuptools]
+py-modules = ["Cerberus"]
+packages = ["core", "engines", "models", "parsers", "reporters"]
