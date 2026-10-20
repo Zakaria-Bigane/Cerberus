@@ -1,13 +1,23 @@
-# Configuration Ruff — linting minimal et défendable pour un outil de sécurité.
-# On retient les vraies erreurs (F) + style basique (E4/E7/E9) + imports triés (I).
-# Les règles stylistiques agressives (UP, BLE, SIM…) sont volontairement exclues :
-# elles généreraient du bruit sur un code fonctionnel sans valeur ajoutée.
+# Configuration Ruff — linting + règles de sécurité (S = flake8-bandit) pour un
+# outil de sécurité. On retient les vraies erreurs (F), le style basique (E4/E7/E9),
+# les imports triés (I) et l'analyse de sécurité (S).
+# Les règles stylistiques agressives (UP, SIM…) restent exclues : du bruit sans
+# valeur ajoutée sur un code fonctionnel.
 
 exclude = ["lab_env", ".venv", "__pycache__"]
 
 [lint]
-select = ["F", "E4", "E7", "E9", "I"]
-ignore = []
+select = ["F", "E4", "E7", "E9", "I", "S"]
+ignore = [
+    "S501",  # verify=False : voulu pour les certificats auto-signés des laboratoires locaux (justifié en ligne par un commentaire nosec).
+    # S608 : les requêtes SQL/GraphQL construites visent des laboratoires locaux ;
+    # S311 : random utilisé pour des broutilles non cryptographiques (ids de tests).
+]
 
 [lint.per-file-ignores]
 "reporters/__init__.py" = ["F401"]
+# Cerberus intercepte volontairement les exceptions larges par conception
+# (scanner tolérant aux cibles instables) : choix architectural, pas un défaut.
+"*" = ["BLE001"]
+# Les tests emploient assert (S101) et des secrets fictifs (S105/S106).
+"tests/*" = ["S101", "S105", "S106"]

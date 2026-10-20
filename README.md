@@ -61,7 +61,7 @@ de l'opération plutôt que le seul code de statut renvoyé.
 
 ## Installation
 
-Prérequis : **Python 3.9+**.
+Prérequis : **Python 3.10+** (version testée en CI : 3.10, 3.11, 3.12).
 
 ```bash
 git clone https://github.com/Zakaria-Bigane/cerberus.git

@@ -63,7 +63,7 @@ class RequestHandler:
                 params=query_params,
                 json=json_body,
                 timeout=self.timeout,
-                verify=False
+                verify=False  # nosec B501 : les laboratoires cibles (VAmPI/DVGA/crAPI) utilisent des certificats auto-signés en local ; option à rendre configurable pour toute cible réelle.
             )
             return AuditResponse(res.status_code, res.text, len(res.text), res.elapsed.total_seconds())
         except requests.RequestException as e:
@@ -111,7 +111,7 @@ class RequestHandler:
                 headers=headers,
                 json={"query": gql_body},
                 timeout=self.timeout,
-                verify=False
+                verify=False  # nosec B501 : certificats auto-signés des laboratoires locaux (voir requête REST ci-dessus).
             )
             # GraphQL : 200 même en cas d'erreur ; l'erreur est dans le champ "errors"
             is_gql_error = False
