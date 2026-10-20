@@ -1,5 +1,7 @@
 # Cerberus
 
+[![CI](https://github.com/Zakaria-Bigane/Cerberus/actions/workflows/ci.yml/badge.svg)](https://github.com/Zakaria-Bigane/Cerberus/actions/workflows/ci.yml)
+
 **Outil d'audit automatisé du contrôle d'accès des API modernes (REST/OpenAPI & GraphQL).**
 
 Cerberus détecte les vulnérabilités de contrôle d'accès les plus critiques du
@@ -10,6 +12,21 @@ s'appuyant sur le schéma de l'API et sur un test différentiel entre identités
 > *« Les trois têtes veillent : admin · user · anonyme. »*
 
 ---
+
+## Qualité et sécurité (CI)
+
+Chaque push et pull request déclenche le workflow GitHub Actions suivant :
+
+| Contrôle | Outil | Portée |
+|---|---|---|
+| Tests unitaires | pytest (matrice Python 3.10 → 3.12) | Parsers OpenAPI/GraphQL, gestion d'authentification, oracles BOLA/BFLA, générateurs de rapports — **aucune cible vivante requise** (HTTP simulé, JWT fabriqués) |
+| Couverture | pytest-cov | ~56 % du noyau, rapport `coverage.xml` publié en artefact |
+| Linting | Ruff | Analyse statique de tout le dépôt |
+| Audit des dépendances | pip-audit | `requirements.txt` confronté aux advisories PyPA (chaîne d'approvisionnement) |
+| Dépendabot | .github/dependabot.yml | Mises à jour automatiques hebdomadaires (pip + actions) |
+
+Sécurité du pipeline : jeton en lecture seule par défaut, actions tierces
+épinglées par commit SHA, aucun secret en clair.
 
 ## Pourquoi Cerberus ?
 
