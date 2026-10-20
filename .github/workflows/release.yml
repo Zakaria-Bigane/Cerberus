@@ -65,11 +65,40 @@ jobs:
           name: dist
           path: dist/
 
+  # ── 1bis. GitHub Release en brouillon, dès que le build passe ──────────────
+  # La release est créée en BROUILLON avant toute publication : elle reste
+  # privée/invisible tant que PyPI n'a pas été approuvé, puis est publiée
+  # automatiquement à la fin du pipeline.
+  github-release-draft:
+    name: Préparer la GitHub Release (brouillon)
+    needs: build-and-test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write    # nécessaire pour créer une release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Récupérer les artefacts construits
+        uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e  # v4.1.7
+        with:
+          name: dist
+          path: dist/
+
+      - name: Créer la release en brouillon avec notes automatiques
+        uses: softprops/action-gh-release@6da8fa9354ddfdc4aeace5fc48d7f679b5214090  # v2.4.1
+        with:
+          generate_release_notes: true
+          draft: true
+          files: |
+            dist/*
+
   # ── 2. Publication d'essai sur TestPyPI (validation bout-en-bout) ──────────
   testpypi:
     name: Publication d'essai (TestPyPI)
     needs: build-and-test
     runs-on: ubuntu-24.04
+    if: ${{ vars.ENABLE_PYPI_PUBLISH == 'true' && secrets.TEST_PYPI_API_TOKEN != '' }}
     environment: testpypi
     permissions:
       contents: read
@@ -100,6 +129,7 @@ jobs:
     name: Publication PyPI (après approbation)
     needs: [build-and-test, testpypi]
     runs-on: ubuntu-24.04
+    if: ${{ vars.ENABLE_PYPI_PUBLISH == 'true' && secrets.PYPI_API_TOKEN != '' }}
     environment: pypi-publish
     permissions:
       contents: read
@@ -115,20 +145,20 @@ jobs:
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
 
-  # ── 4. Changelog automatique sur la GitHub Release ─────────────────────────
-  github-release:
-    name: Créer la GitHub Release
-    needs: publish
+  # ── 4. Publier le brouillon de release (ou le laisser visible si PyPI désactivé)
+  github-release-publish:
+    name: Publier la GitHub Release
+    needs: [build-and-test, github-release-draft, publish]
+    # always() : on veut publier la release même si les jobs PyPI ont été sautés
+    # (cas où ENABLE_PYPI_PUBLISH n'est pas encore activé).
+    if: always() && needs.build-and-test.result == 'success' && needs.github-release-draft.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04
     permissions:
-      contents: write    # nécessaire pour créer une release
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - name: Créer la release avec notes automatiques
+      - name: Publier le brouillon créé plus tôt
         uses: softprops/action-gh-release@6da8fa9354ddfdc4aeace5fc48d7f679b5214090  # v2.4.1
         with:
-          generate_release_notes: true
-          files: |
-            dist/*
+          tag_name: ${{ github.ref_name }}
+          make_latest: true
+          draft: false
