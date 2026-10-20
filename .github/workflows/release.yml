@@ -102,6 +102,7 @@ jobs:
     environment: testpypi
     permissions:
       contents: read
+      id-token: write   # indispensable au trusted publishing (OIDC)
     steps:
       - name: Récupérer les artefacts construits
         uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e  # v4.1.7
@@ -133,6 +134,7 @@ jobs:
     environment: pypi-publish
     permissions:
       contents: read
+      id-token: write   # indispensable au trusted publishing (OIDC)
     steps:
       - name: Récupérer les artefacts construits
         uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e  # v4.1.7
