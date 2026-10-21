@@ -58,6 +58,11 @@ jobs:
           pip install build twine
           python -m build
           twine check dist/*
+          echo "--- Contenu de l'artefact 'dist' uploadé ---"
+          ls -la dist/
+          for f in dist/*.whl; do
+            python -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); n=[x for x in z.namelist() if x.endswith('METADATA')][0]; print(sys.argv[1], '->', repr(z.read(n)[:80]))" "$f"
+          done
 
       - name: Publier les artefacts comme pièce jointe de la release
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -107,10 +112,16 @@ jobs:
     steps:
       - name: Récupérer les artefacts construits
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
-        continue-on-error: true
         with:
           name: dist
           path: dist/
+
+      - name: Vérifier l'intégrité des distributions reçues
+        run: |
+          ls -la dist/
+          for f in dist/*.whl; do
+            python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); n=[x for x in z.namelist() if x.endswith('METADATA')][0]; head=z.read(n)[:80].decode(errors='replace'); assert 'Metadata-Version' in head, 'METADATA corrompu: '+repr(head); print(sys.argv[1],'OK:',head[:60])" "$f"
+          done
 
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
