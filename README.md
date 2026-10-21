@@ -165,7 +165,19 @@ moteurs BOLA/BFLA → oracles → rapports**.
 
 ## Exemple de sortie
 
+Sortie réelle du CLI (logo affiché par `core/cerberus_display.py`) :
+
 ```
+   ______           __
+  / ____/__  _____  / /_  ___  _______  _______
+ / /   / _ \/ ___/ / __ \/ _ \/ ___/ / / / ___/
+/ /___/  __/ /    / /_/ /  __/ /  / /_/ (__  )
+\____/\___/_/    /_.___/\___/_/   \__,_/____/
+
+        API Access Control Auditor  —  BOLA / BFLA
+        version 1.0   par Zakaria Bigane
+        Les trois têtes veillent : admin · user · anonyme
+
 [+] 44 opérations cibles chargées avec succès.
 [*] Test BOLA sur : GET /workshop/api/mechanic/mechanic_report
 [!!!] FAILLE BOLA CONFIRMÉE ! (Statut: 200)
