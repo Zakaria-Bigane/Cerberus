@@ -137,11 +137,10 @@ jobs:
           PYCHK
           ls -la dist/
 
-      - name: Publier sur TestPyPI (Trusted Publishing / OIDC)
-        uses: pypa/gh-action-pypi-publish@f7600683efdcb7656dec5b29656edb7bc586e597  # v1.10.3
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          skip-existing: true
+      - name: Publier sur TestPyPI (Trusted Publishing / OIDC, via twine direct)
+        run: |
+          pip install --quiet "twine==6.2.0"
+          twine upload --repository-url https://test.pypi.org/legacy/ --non-interactive dist/*
 
   # ── 3. Publication réelle sur PyPI — gated by Environment protection ──────
   # Ce job est bloqué tant que l'environnement GitHub `pypi-publish`
@@ -184,9 +183,10 @@ jobs:
           PYCHK
           ls -la dist/
 
-      - name: Publier sur PyPI (Trusted Publishing / OIDC)
-        uses: pypa/gh-action-pypi-publish@f7600683efdcb7656dec5b29656edb7bc586e597  # v1.10.3
-        with: {}
+      - name: Publier sur PyPI (Trusted Publishing / OIDC, via twine direct)
+        run: |
+          pip install --quiet "twine==6.2.0"
+          twine upload --non-interactive dist/*
 
   # ── 4. Publier le brouillon de release (ou le laisser visible si PyPI désactivé)
   github-release-publish:
