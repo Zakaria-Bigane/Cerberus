@@ -55,7 +55,7 @@ jobs:
 
       - name: Construire le paquet (sdist + wheel)
         run: |
-          pip install build twine
+          pip install "build==1.3.0" "twine==6.2.0"
           python -m build
           twine check dist/*
           echo "--- Contenu de l'artefact 'dist' uploadé ---"
@@ -120,9 +120,21 @@ jobs:
 
       - name: Reconstruire les distributions localement (bit-identiques)
         run: |
-          pip install --quiet build
+          pip install --quiet "build==1.3.0" "twine==6.2.0"
           rm -rf dist/
           python -m build
+          # Vérification d'intégrité AVANT publication : le wheel doit contenir
+          # une METADATA valide (Name/Version). twine check est l'outil de référence.
+          twine check dist/*
+          python - <<'PYCHK'
+          import glob, sys, zipfile
+          whl = glob.glob("dist/*.whl")[0]
+          meta = [n for n in zipfile.ZipFile(whl).namelist() if n.endswith(".dist-info/METADATA")]
+          assert meta, f"METADATA absente dans {whl}"
+          head = zipfile.ZipFile(whl).read(meta[0])[:120].decode()
+          assert "Name:" in head and "Version:" in head, f"METADATA invalide: {head!r}"
+          print("Integrite OK:", whl)
+          PYCHK
           ls -la dist/
 
       - name: Publier sur TestPyPI (Trusted Publishing / OIDC)
@@ -155,9 +167,21 @@ jobs:
 
       - name: Reconstruire les distributions localement (bit-identiques)
         run: |
-          pip install --quiet build
+          pip install --quiet "build==1.3.0" "twine==6.2.0"
           rm -rf dist/
           python -m build
+          # Vérification d'intégrité AVANT publication : le wheel doit contenir
+          # une METADATA valide (Name/Version). twine check est l'outil de référence.
+          twine check dist/*
+          python - <<'PYCHK'
+          import glob, sys, zipfile
+          whl = glob.glob("dist/*.whl")[0]
+          meta = [n for n in zipfile.ZipFile(whl).namelist() if n.endswith(".dist-info/METADATA")]
+          assert meta, f"METADATA absente dans {whl}"
+          head = zipfile.ZipFile(whl).read(meta[0])[:120].decode()
+          assert "Name:" in head and "Version:" in head, f"METADATA invalide: {head!r}"
+          print("Integrite OK:", whl)
+          PYCHK
           ls -la dist/
 
       - name: Publier sur PyPI (Trusted Publishing / OIDC)
