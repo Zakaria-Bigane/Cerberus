@@ -18,6 +18,16 @@ class AuditResponse:
     elapsed_time: float
     is_graphql_error: bool = False # Spécifique à GraphQL (qui renvoie souvent 200 OK même en cas d'erreur)
 
+def _echapper_chaine_gql(valeur) -> str:
+    """Échappe une valeur pour l'insertion dans une chaîne littérale GraphQL."""
+    s = str(valeur)
+    return (s.replace("\\", "\\\\")
+             .replace('"', '\\"')
+             .replace("\n", "\\n")
+             .replace("\r", "\\r")
+             .replace("\t", "\\t"))
+
+
 class RequestHandler:
     def __init__(self, timeout: int = 10):
         self.timeout = timeout
@@ -79,13 +89,26 @@ class RequestHandler:
                 val = params_map[p.name]
                 # On respecte le type GraphQL déclaré par le schéma
                 type_arg = (p.data_type or "").lower()
-                if type_arg in ("int", "integer", "float", "id", "boolean"):
-                    # Types numériques/ID : pas de guillemets.
-                    # (En GraphQL, le type ID accepte un entier ou une chaîne nue)
-                    args_list.append(f'{p.name}: {val}')
+                if type_arg in ("int", "integer", "float"):
+                    # Types numériques : pas de guillemets, mais validation
+                    # stricte. Une valeur non numérique romprait la syntaxe →
+                    # on abandonne la requête plutôt que d'envoyer du brut.
+                    try:
+                        num = float(val)
+                        net = str(int(num)) if num == int(num) else str(num)
+                    except (TypeError, ValueError):
+                        return AuditResponse(0, f"Valeur non numérique pour l'argument '{p.name}' : requête abandonnée", 0, 0.0)
+                    args_list.append(f'{p.name}: {net}')
+                elif type_arg == "boolean":
+                    bool_val = str(bool(val)).lower() if isinstance(val, bool) else str(val).lower()
+                    if bool_val not in ("true", "false"):
+                        return AuditResponse(0, f"Valeur non booléenne pour l'argument '{p.name}' : requête abandonnée", 0, 0.0)
+                    args_list.append(f'{p.name}: {bool_val}')
                 else:
-                    # Types chaîne : avec guillemets
-                    args_list.append(f'{p.name}: "{val}"')
+                    # Types chaîne et ID : entre guillemets AVEC échappement.
+                    # Sans échappement, une valeur contenant " ou } rompt la
+                    # syntaxe du document et permet d'y injecter du contenu.
+                    args_list.append(f'{p.name}: "{_echapper_chaine_gql(val)}"')
         args_str = f"({', '.join(args_list)})" if args_list else ""
 
         # 2. Choisir query ou mutation depuis l'info du parser (pas de devinette)
@@ -113,10 +136,20 @@ class RequestHandler:
                 timeout=self.timeout,
                 verify=False  # nosec B501 : certificats auto-signés des laboratoires locaux (voir requête REST ci-dessus).
             )
-            # GraphQL : 200 même en cas d'erreur ; l'erreur est dans le champ "errors"
+            # GraphQL : 200 même en cas d'erreur ; l'erreur est dans le champ "errors".
+            # Détection Fiable par parsing JSON (la recherche de la sous-chaîne
+            # '"errors"' dans le texte brut produit des faux positifs quand ce
+            # mot apparaît dans une donnée légitime, et des faux négatifs si la
+            # réponse n'est pas du JSON).
             is_gql_error = False
-            if res.status_code == 200 and '"errors"' in res.text:
-                is_gql_error = True
+            if res.status_code == 200:
+                try:
+                    corps_json = res.json()
+                    if isinstance(corps_json, dict):
+                        erreurs = corps_json.get("errors")
+                        is_gql_error = bool(erreurs) if isinstance(erreurs, list) else False
+                except ValueError:
+                    is_gql_error = False
             return AuditResponse(res.status_code, res.text, len(res.text),
                                  res.elapsed.total_seconds(), is_gql_error)
         except requests.RequestException as e:

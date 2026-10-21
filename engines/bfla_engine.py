@@ -24,6 +24,19 @@ class BflaEngine:
         self.register_path = None
         self.tous_endpoints = []
 
+    @staticmethod
+    def _headers_roles(auth_manager, role):
+        """En-têtes pour un rôle ('None' = anonyme)."""
+        if role:
+            return auth_manager.get_auth_headers(role)
+        return {"Content-Type": "application/json"}
+
+    @staticmethod
+    def _authentifie(headers) -> bool:
+        """Un rôle dont le jeton n'a pas pu être obtenu fausse tout le
+        différentiel (il serait testé comme un anonyme). À signaler, pas masquer."""
+        return True if headers.get("Authorization") else False
+
     def run(self, endpoints, target_url, register_path=None):
         print()
         separateur()
@@ -32,6 +45,17 @@ class BflaEngine:
 
         self.register_path = register_path
         self.tous_endpoints = endpoints
+
+        # Garde d'authentification : si les rôles de référence ne peuvent pas
+        # être authentifiés, le différentiel est invalide (un admin sans jeton
+        # rend tous les tests "BLOQUE" → faux sentiment de sécurité).
+        for role in ("admin", "user_a"):
+            if not self._authentifie(self._headers_roles(self.auth_manager, role)):
+                log_error(f"ÉCHEC CRITIQUE : impossible d'authentifier le rôle '{role}'. "
+                          "Différentiel BFLA impossible — vérifiez la configuration d'auth.")
+                return [{'vulnerability': 'BFLA', 'endpoint': '(audit interrompu)',
+                         'api_type': 'N/A', 'verdict': 'NON_CONCLUANT',
+                         'is_vulnerable': False, 'a_examiner': False}]
 
         # Aiguillage REST / GraphQL selon le type des endpoints
         est_graphql = any(e.api_type == ApiType.GRAPHQL for e in endpoints)
@@ -85,6 +109,8 @@ class BflaEngine:
             return "NON_CONCLUANT"
 
         succes_user = self._role_accede(target_url, endpoint, 'user_a')
+        if succes_user == "NON_CONCLUANT":
+            return "NON_CONCLUANT"   # attaquant non authentifié → différentiel invalide
         succes_anon = self._role_accede(target_url, endpoint, None)
 
         # Fonction accessible même en anonyme → absence totale de contrôle
@@ -101,15 +127,20 @@ class BflaEngine:
 
     def _role_accede(self, target_url, endpoint, role) -> str:
         """Le rôle donné accède-t-il à l'endpoint ? (None = anonyme)"""
-        if role:
-            headers = self.auth_manager.get_auth_headers(role)
-        else:
-            headers = {"Content-Type": "application/json"}
+        headers = self._headers_roles(self.auth_manager, role)
+        if role and not self._authentifie(headers):
+            return "NON_CONCLUANT"   # jeton indisponible → test invalide
 
-        # Paramètres : id factice + body pour POST/PUT
+        # Paramètres : id factice
         params_map = {}
         for p in endpoint.get_id_parameters():
             params_map[p.name] = "1"
+
+        # Corps : pour POST/PUT/PATCH, on fournit le body_template déclaré par
+        # le schéma. Sans lui, la requête arrive vide → 400 → "AUTRE" : le test
+        # n'a JAMAIS évalué l'autorisation et un vrai BFLA passerait inaperçu.
+        if endpoint.method.upper() in ("POST", "PUT", "PATCH") and not endpoint.body_template:
+            return "NON_CONCLUANT"   # écriture sans corps connu → rien de testable
 
         response = self.request_handler.send(
             base_url=target_url, endpoint=endpoint,
@@ -167,10 +198,9 @@ class BflaEngine:
         if not self._creer_cible(target_url, nom_cible):
             return "NON_CONCLUANT"
 
-        if role:
-            headers = self.auth_manager.get_auth_headers(role)
-        else:
-            headers = {"Content-Type": "application/json"}
+        headers = self._headers_roles(self.auth_manager, role)
+        if role and not self._authentifie(headers):
+            return "NON_CONCLUANT"   # jeton indisponible → effet non attribuable
 
         params_map = {}
         for param in endpoint.get_id_parameters():
@@ -217,7 +247,9 @@ class BflaEngine:
         for param in ep_lecture.get_id_parameters():
             params_map[param.name] = nom_cible
 
-        headers = self.auth_manager.get_auth_headers('admin')
+        headers = self._headers_roles(self.auth_manager, 'admin')
+        if not self._authentifie(headers):
+            return None   # relecture impossible → effet non vérifiable
         reponse = self.request_handler.send(
             base_url=target_url, endpoint=ep_lecture,
             headers=headers, params_map=params_map
@@ -294,10 +326,9 @@ class BflaEngine:
         return "NON_CONCLUANT"
 
     def _role_reussit_graphql(self, target_url, endpoint, role) -> str:
-        if role:
-            headers = self.auth_manager.get_auth_headers(role)
-        else:
-            headers = {"Content-Type": "application/json"}
+        headers = self._headers_roles(self.auth_manager, role)
+        if role and not self._authentifie(headers):
+            return "NON_CONCLUANT"   # jeton indisponible → test invalide
 
         params_map = {}
         for p in endpoint.get_id_parameters():

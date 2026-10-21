@@ -178,3 +178,76 @@ def test_graphql_error_technique_est_non_concluant(engine):
     eng, _ = engine([])
     rep = gql_reponse({"errors": [{"message": "Internal error: division by zero"}]})
     assert eng._analyser_reponse_graphql(rep) == "NON_CONCLUANT"
+
+
+# ═══ Tests des correctifs de bugs fonctionnels (v1.0.8) ════════════════════
+
+class FauxAuthEchec:
+    """L'authentification échoue : get_auth_headers ne renvoie PAS d'Authorization."""
+    def get_auth_headers(self, role):
+        return {"Content-Type": "application/json"}
+
+
+def test_run_bola_interrompu_si_attaquant_non_authentifie(engine):
+    """FIX auth : sans jeton attaquant, le run s'arrête avec un verdict explicite
+    au lieu de produire une cascade de faux BLOQUE/NON_CONCLUANT silencieux."""
+    eng, handler = engine([])
+    eng.auth_manager = FauxAuthEchec()
+    resultats = eng.run([ep_rest("GET")], "http://x", "2")
+    assert len(resultats) == 1
+    assert resultats[0]["verdict"] == "NON_CONCLUANT"
+    assert handler.envois == []   # aucune requête d'attaque envoyée
+
+
+def test_ecriture_rest_jouee_une_seule_fois(engine):
+    """FIX tir unique : PUT avec endpoint de lecture → la séquence oracle est
+    lire_avant / attaque / lire_apres (3 envois), PAS attaque_puis 3_rejoues (4)."""
+    ep_ecriture = ep_rest("PUT", "/users/v1/{username}/email")
+    ep_ecriture.parameters = [Parameter("username", ParamLocation.PATH, "string", True, True)]
+    ep_lecture = ep_rest("GET", "/users/v1/{username}")
+    reponses = [
+        AuditResponse(200, '{"email":"old@x"}', 17, 0.1),   # AVANT
+        AuditResponse(200, 'ok', 2, 0.1),                    # ATTAQUE
+        AuditResponse(200, '{"email":"new@x"}', 17, 0.1),   # APRÈS (changé)
+    ]
+    eng, handler = engine(reponses)
+    resultats = eng.run([ep_ecriture, ep_lecture], "http://x", "victim")
+    # L'écriture ne doit être jouée QU'UNE SEULE FOIS (avant : tir + oracle = 2).
+    tirs_ecriture = [e for e in handler.envois if e[0] is ep_ecriture or e[0].method == "PUT"]
+    assert len(tirs_ecriture) == 1, f"écriture jouée {len(tirs_ecriture)} fois (attendu 1)"
+    # Séquence complète attendue : AVANT(lire) → ATTAQUE(écrire) → APRÈS(lire) → puis le GET lui-même testé
+    assert len(handler.envois) == 4, f"attendu 4 envois, obtenu {len(handler.envois)}"
+    assert resultats[0]["verdict"] == "VULNERABLE"
+
+
+def test_ecriture_rest_sans_lecture_garde_le_comportement_unique(engine):
+    """Sans endpoint de lecture, l'écriture n'est jouée qu'une fois aussi (pas d'oracle)."""
+    ep_ecriture = ep_rest("POST", "/orders")
+    ep_ecriture.parameters = [Parameter("order_id", ParamLocation.PATH, "string", True, True)]
+    eng, handler = engine([AuditResponse(200, "{}", 2, 0.1)])
+    eng.run([ep_ecriture], "http://x", "9")
+    assert len(handler.envois) == 1   # juste le tir initial, pas de contre-test public sur POST ? -> ici 1
+
+
+def test_auth_configurable_via_identity_query():
+    """FIX hypothèse codée : la query d'identité se lit dans auth.identity_query."""
+    from unittest.mock import MagicMock, patch
+    appels = []
+
+    class PostPirate:
+        def post(self, url, json=None, headers=None, timeout=None):
+            appels.append(json["query"])
+            r = MagicMock()
+            r.json.return_value = {"data": {"moi": {"id": 42}}}
+            return r
+
+    class AuthAvecConfig:
+        config = {"auth": {"identity_query": '{ moi { id } }'}}
+        def get_auth_headers(self, role):
+            return {"Authorization": "Bearer tok", "Content-Type": "application/json"}
+
+    eng = BolaEngine(AuthAvecConfig(), FauxHandler([]))
+    with patch("requests.post", PostPirate().post):
+        identifiant = eng._obtenir_id_attaquant("http://x/graphql")
+    assert identifiant == "42"          # racine générique : première clé dict de data
+    assert "moi" in appels[0]           # gabarit configurable utilisé

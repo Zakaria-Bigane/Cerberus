@@ -1,4 +1,6 @@
 auth:
+  # Query pour identifier l'attaquant (oracles GraphQL BOLA).
+  # %s est remplacé par le jeton. Défaut si absent : { me(token: "%s") { id } } (forme DVGA)
   # Type d'authentification : "rest" ou "graphql"
   type: "graphql"
 

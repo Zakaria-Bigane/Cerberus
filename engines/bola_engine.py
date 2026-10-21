@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, List
 
 from core.auth_manager import AuthManager
@@ -7,6 +8,7 @@ from core.cerberus_display import (
     log_info,
     log_public,
     log_unknown,
+    log_warning,
     separateur,
 )
 from core.request_handler import AuditResponse, RequestHandler
@@ -48,6 +50,8 @@ class BolaEngine:
 
         # 1. L'attaquant impose ce mot de passe via l'URL de la victime
         attacker_headers = self.auth_manager.get_auth_headers('user_a')
+        if "Authorization" not in attacker_headers:
+            return "NON_CONCLUANT"   # attaquant non authentifié → rien à prouver
 
         # On construit le body en remplaçant le champ password par notre valeur
         body = dict(endpoint.body_template) if endpoint.body_template else {}
@@ -92,6 +96,20 @@ class BolaEngine:
         log_info("Récupération du jeton pour 'user_a' (Attaquant)...")
         attacker_headers = self.auth_manager.get_auth_headers('user_a')
 
+        # Échec d'authentification = audit invalide. Sans le jeton de l'attaquant,
+        # chaque requête serait envoyée en anonyme : l'API renverrait 401 partout
+        # et le moteur conclurait « NON_CONCLUANT » test par test sans jamais dire
+        # POURQUOI. On lève une erreur explicite plutôt que de produire un rapport
+        # trompeur.
+        if "Authorization" not in attacker_headers:
+            log_error("ÉCHEC CRITIQUE : impossible d'authentifier le rôle 'user_a' "
+                      "(attaquant). Vérifiez les identifiants et l'endpoint de login "
+                      "dans la configuration. Audit BOLA interrompu.")
+            return [{'vulnerability': 'BOLA', 'endpoint': '(audit interrompu)',
+                     'api_type': 'N/A', 'params_injected': {}, 'status_code': 0,
+                     'verdict': 'NON_CONCLUANT', 'is_vulnerable': False,
+                     'response_snippet': "Authentification du rôle 'user_a' impossible"}]
+
         for endpoint in endpoints:
             # 2. Filtrage : on ne teste que les endpoints ayant un paramètre d'ID
             id_params = endpoint.get_id_parameters()
@@ -117,13 +135,23 @@ class BolaEngine:
                         params_map[param.name] = self._valeur_test_pour(param)
 
             # 4. Déclenchement du tir
-            #    Exception : pour les mutations GraphQL, on NE tire PAS ici.
-            #    L'oracle d'effet gère toute la séquence (lire avant / tirer / lire après),
-            #    sinon la mutation s'exécuterait deux fois et fausserait le différentiel.
+            #    Exceptions — on NE tire PAS ici quand un oracle d'effet va jouer
+            #    lui-même la séquence complète (lire avant / TIRER UNE FOIS / lire
+            #    après). Tirer ici ET dans l'oracle exécuterait l'écriture deux fois
+            #    sur la cible (dégâts réels doublés, et faux négatif si la 2ᵉ écriture
+            #    est refusée alors que la 1ʳᵉ avait passé).
+            #      • mutation GraphQL  → _verifier_bola_mutation_graphql
+            #      • écriture REST avec endpoint de lecture trouvé → _verifier_effet_par_lecture
             is_mutation_gql = (endpoint.api_type == ApiType.GRAPHQL and endpoint.is_mutation)
+            ep_lecture = None
+            if endpoint.api_type == ApiType.REST and self._est_ecriture(endpoint):
+                ep_lecture = self._trouver_endpoint_lecture(endpoint, endpoints)
 
-            if is_mutation_gql:
-                response = None
+            if is_mutation_gql or ep_lecture is not None:
+                # On simule un 200 pour que la suite du flux (branches de
+                # verdict) atteigne l'oracle d'effet ; le code réel de la
+                # mutation sera relevé par l'oracle lui-même si besoin.
+                response = AuditResponse(200, "", 0, 0.0)
                 verdict = "VULNERABLE"   # provisoire : l'oracle d'effet tranchera
             else:
                 response = self.request_handler.send(
@@ -144,22 +172,30 @@ class BolaEngine:
                     )
                 elif verdict == "VULNERABLE":
                     # Query : oracle de propriété sur le retour
-                    verdict = self._verifier_bola_propriete(
-                        target_url, endpoint, params_map, response
-                    )
+                    if self._obtenir_id_attaquant(target_url) is None:
+                        verdict = "NON_CONCLUANT"   # pas de référence → propriété invérifiable
+                    else:
+                        verdict = self._verifier_bola_propriete(
+                            target_url, endpoint, params_map, response
+                        )
 
             # ── Branche REST ──────────────────────────────────────────
             else:
                 if verdict == "VULNERABLE":
-                    if self._est_ressource_publique(target_url, endpoint, params_map):
+                    # Contre-test anonyme : réservé aux LECTURES. Rejouer une
+                    # ÉCRITURE sans jeton déclencherait un second effet de bord
+                    # sur la cible (et le 2xx d'un POST anonyme est presque
+                    # toujours un faux signal « public »).
+                    if not self._est_ecriture(endpoint) and \
+                            self._est_ressource_publique(target_url, endpoint, params_map):
                         verdict = "PUBLIC"
 
-                if verdict == "VULNERABLE" and self._est_ecriture(endpoint):
-                    ep_lecture = self._trouver_endpoint_lecture(endpoint, endpoints)
-                    if ep_lecture:
-                        verdict = self._verifier_effet_par_lecture(
-                            target_url, endpoint, ep_lecture, victim_id
-                        )
+                if verdict == "VULNERABLE" and ep_lecture is not None:
+                    # Écriture : effet vérifié par relecture AVANT/APRÈS.
+                    # La mutation n'a été jouée QUE dans cet oracle (voir étape 4).
+                    verdict = self._verifier_effet_par_lecture(
+                        target_url, endpoint, ep_lecture, victim_id
+                    )
                     if verdict == "BLOQUE" and self._est_endpoint_credential(endpoint):
                         verdict = self._verifier_bola_par_login(
                             target_url, endpoint, victim_id
@@ -283,8 +319,6 @@ class BolaEngine:
         Oracle GraphQL. Le code HTTP est toujours 200 : c'est le contenu
         (data vs errors) qui porte le verdict.
         """
-        import json
-
         if response.status_code == 0:
             return "NON_CONCLUANT"
 
@@ -311,8 +345,6 @@ class BolaEngine:
         On ne lit pas le retour de la mutation : on vérifie l'EFFET réel en
         relisant la ressource via la query correspondante (ex: paste).
         """
-        import json
-
         # 1. Trouver la query de lecture correspondante (même racine que la mutation)
         #    editPaste/deletePaste → paste ; on cherche une query 'paste'
         query_lecture = self._trouver_query_lecture_graphql(endpoint)
@@ -376,7 +408,6 @@ class BolaEngine:
 
     def _lire_ressource_graphql(self, target_url, query_endpoint, id_cible):
         """Lit une ressource via une query GraphQL. Renvoie l'objet ou None."""
-        import json
         attacker_headers = self.auth_manager.get_auth_headers('user_a')
         params = {}
         for p in query_endpoint.get_id_parameters():
@@ -409,8 +440,6 @@ class BolaEngine:
         Compare l'identité de l'attaquant au propriétaire de la ressource obtenue.
         Si l'attaquant obtient un objet dont il n'est pas le propriétaire → BOLA.
         """
-        import json
-
         # 1. Extraire la ressource obtenue de la réponse
         try:
             corps = json.loads(response.response_body)
@@ -494,18 +523,36 @@ class BolaEngine:
             return self._id_attaquant_cache
 
         headers = self.auth_manager.get_auth_headers('user_a')
+        if "Authorization" not in headers:
+            self._id_attaquant_cache = None
+            return None
         token = headers.get("Authorization", "").replace("Bearer ", "")
 
-        # Query 'me' avec le token en argument (spécificité observée sur DVGA)
-        query = f'{{ me(token: "{token}") {{ id }} }}'
+        # La query d'identité est CONFIGURABLE : la forme `me(token: "...")` est
+        # une spécificité de DVGA. D'autres API utilisent `me { id }`, `viewer`,
+        # etc. On lit auth.identity_query dans la YAML ; sans config, on retombe
+        # sur la valeur par défaut historique.
+        default_query = '{ me(token: "%s") { id } }'
+        gabarit = (self.auth_manager.config.get("auth", {}).get("identity_query")
+                  or default_query)
+        from core.request_handler import _echapper_chaine_gql
+        query = gabarit % _echapper_chaine_gql(token) if "%s" in gabarit else gabarit
+
         import requests
         try:
             r = requests.post(target_url, json={"query": query}, headers=headers, timeout=10)
             data = r.json().get("data", {})
-            me = data.get("me")
-            id_attaquant = str(me["id"]) if me else None
+            # Le nom du champ racine suit celui de l'opération dans la query ;
+            # on prend la première clé non nulle de data pour rester générique.
+            me = next((v for v in data.values() if isinstance(v, dict)), None)
+            id_attaquant = str(me["id"]) if me and me.get("id") is not None else None
         except Exception:
             id_attaquant = None
+
+        if id_attaquant is None:
+            log_warning("Impossible d'identifier l'attaquant via la query d'identité "
+                        "(configurable via auth.identity_query). Les oracles GraphQL "
+                        "par propriétaire sont neutralisés → verdicts NON_CONCLUANT.")
 
         self._id_attaquant_cache = id_attaquant
         return id_attaquant
@@ -545,6 +592,10 @@ class BolaEngine:
         )
 
         # 4. Comparaison : la ressource de la victime a-t-elle changé ?
+        if avant.status_code == 0 or apres.status_code == 0:
+            return "NON_CONCLUANT"   # erreur réseau pendant l'oracle
+        if avant.status_code not in (200, 201, 204):
+            return "NON_CONCLUANT"   # pas d'état initial fiable → différentiel invalide
         if avant.response_body != apres.response_body:
             return "VULNERABLE"   # la victime a été modifiée → vrai BOLA
         else:
