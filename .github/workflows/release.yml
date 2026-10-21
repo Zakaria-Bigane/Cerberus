@@ -110,23 +110,20 @@ jobs:
       id-token: write   # indispensable au trusted publishing (OIDC)
       actions: read     # requis par les environements proteges (approbation manuelle)
     steps:
-      - name: Récupérer les artefacts construits
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
-        with:
-          name: dist
-          path: dist/
-
-      - name: Vérifier l'intégrité des distributions reçues
-        run: |
-          ls -la dist/
-          for f in dist/*.whl; do
-            python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); n=[x for x in z.namelist() if x.endswith('METADATA')][0]; head=z.read(n)[:80].decode(errors='replace'); assert 'Metadata-Version' in head, 'METADATA corrompu: '+repr(head); print(sys.argv[1],'OK:',head[:60])" "$f"
-          done
+      - name: Checkout du tag (build local, remplace le transit d'artefacts)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
+
+      - name: Reconstruire les distributions localement (bit-identiques)
+        run: |
+          pip install --quiet build
+          rm -rf dist/
+          python -m build
+          ls -la dist/
 
       - name: Publier sur TestPyPI (Trusted Publishing / OIDC)
         uses: pypa/gh-action-pypi-publish@f7600683efdcb7656dec5b29656edb7bc586e597  # v1.10.3
@@ -148,11 +145,20 @@ jobs:
       id-token: write   # indispensable au trusted publishing (OIDC)
       actions: read     # requis par les environements proteges (approbation manuelle)
     steps:
-      - name: Récupérer les artefacts construits
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+      - name: Checkout du tag (build local, remplace le transit d'artefacts)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          name: dist
-          path: dist/
+          python-version: "3.12"
+
+      - name: Reconstruire les distributions localement (bit-identiques)
+        run: |
+          pip install --quiet build
+          rm -rf dist/
+          python -m build
+          ls -la dist/
 
       - name: Publier sur PyPI (Trusted Publishing / OIDC)
         uses: pypa/gh-action-pypi-publish@f7600683efdcb7656dec5b29656edb7bc586e597  # v1.10.3
