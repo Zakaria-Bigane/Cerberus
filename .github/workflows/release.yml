@@ -98,7 +98,7 @@ jobs:
     name: Publication d'essai (TestPyPI)
     needs: build-and-test
     runs-on: ubuntu-24.04
-    if: ${{ vars.ENABLE_PYPI_PUBLISH == 'true' && secrets.TEST_PYPI_API_TOKEN != '' }}
+    if: ${{ vars.ENABLE_PYPI_PUBLISH == 'true' }}
     environment: testpypi
     permissions:
       contents: read
@@ -117,11 +117,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Publier sur TestPyPI (jeton via secrets, jamais en clair)
+      - name: Publier sur TestPyPI (Trusted Publishing / OIDC)
         uses: pypa/gh-action-pypi-publish@f7600683efdcb7656dec5b29656edb7bc586e597  # v1.10.3
         with:
           repository-url: https://test.pypi.org/legacy/
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
           skip-existing: true
 
   # ── 3. Publication réelle sur PyPI — gated by Environment protection ──────
@@ -131,7 +130,7 @@ jobs:
     name: Publication PyPI (après approbation)
     needs: [build-and-test, testpypi]
     runs-on: ubuntu-24.04
-    if: ${{ vars.ENABLE_PYPI_PUBLISH == 'true' && secrets.PYPI_API_TOKEN != '' }}
+    if: ${{ vars.ENABLE_PYPI_PUBLISH == 'true' }}
     environment: pypi-publish
     permissions:
       contents: read
@@ -144,10 +143,9 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publier sur PyPI
+      - name: Publier sur PyPI (Trusted Publishing / OIDC)
         uses: pypa/gh-action-pypi-publish@f7600683efdcb7656dec5b29656edb7bc586e597  # v1.10.3
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+        with: {}
 
   # ── 4. Publier le brouillon de release (ou le laisser visible si PyPI désactivé)
   github-release-publish:
