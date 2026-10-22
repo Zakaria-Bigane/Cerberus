@@ -4,6 +4,9 @@ Gère la bannière ASCII, les couleurs du terminal et les marqueurs de statut
 normalisés (à la manière des outils de sécurité comme nmap, sqlmap, nikto).
 """
 
+import os
+import sys
+
 # --- Couleurs ANSI ---------------------------------------------------
 # colorama rend les couleurs ANSI fonctionnelles sous Windows.
 try:
@@ -24,7 +27,18 @@ except ImportError:
 VERSION = "1.0"
 AUTEUR = "Zakaria Bigane"
 
-BANNER = r"""
+# Logo Unicode (style « ANSI Shadow ») — CERBERUS
+BANNER_UNICODE = r"""
+██████╗███████╗██████╗ ███████╗██████╗ ██╗   ██╗██████╗ ██╗  ██╗
+██╔════╝██╔════╝██╔══██╗██╔════╝██╔══██╗╚██╗ ██╔╝██╔══██╗██║  ██║
+╚█████╗ █████╗  ██████╔╝█████╗  ██████╔╝ ╚████╔╝ ██████╔╝███████║
+ ╚═══██╗██╔══╝  ██╔══██╗██╔══╝  ██╔═══╝   ╚██╔╝  ██╔═══╝ ╚══════║
+██████╔╝███████╗██║  ██║███████╗██║        ██║   ██║     ███████║
+╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝╚═╝        ╚═╝   ╚═╝     ╚══════╝
+"""
+
+# Repli ASCII pur : terminaux non-UTF-8, Windows legacy, sorties CI.
+BANNER_ASCII = r"""
    ______           __
   / ____/__  _____  / /_  ___  _______  _______
  / /   / _ \/ ___/ / __ \/ _ \/ ___/ / / / ___/
@@ -33,9 +47,27 @@ BANNER = r"""
 """
 
 
+def _supporte_unicode():
+    """Vrai si le terminal accepte l'UTF-8 et qu'on n'est pas en mode sobre.
+
+    Le repli ASCII est forcé si :
+      - CERBERUS_PLAIN ou NO_COLOR est défini (convention « plain output »),
+      - l'encodage de stdout n'est pas UTF-8 (ex. cp1252 sous Windows legacy).
+    """
+    if os.environ.get("CERBERUS_PLAIN") or os.environ.get("NO_COLOR"):
+        return False
+    enc = (getattr(sys.stdout, "encoding", "") or "").lower()
+    return "utf" in enc
+
+
+def _choix_banniere():
+    return BANNER_UNICODE if _supporte_unicode() else BANNER_ASCII
+
+
 def afficher_banniere():
-    """Affiche la bannière ASCII de Cerberus avec ses informations."""
-    print(f"{_BLEU}{_GRAS}{BANNER}{_RESET}")
+    """Affiche la bannière de Cerberus (Unicode, repli ASCII automatique)."""
+    banner = _choix_banniere()
+    print(f"{_BLEU}{_GRAS}{banner}{_RESET}")
     print(f"{_GRAS}        API Access Control Auditor{_RESET}  —  BOLA / BFLA")
     print(f"        version {VERSION}   par {AUTEUR}")
     print(f"        {_JAUNE}Les trois têtes veillent : admin · user · anonyme{_RESET}")
